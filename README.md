@@ -23,7 +23,13 @@ You can set:
  * Unique ID.
  * MQTT topic.
  
- Pin 12 on the ESP8266 controls the relay. Pin 0 is the button, 13 is the status LED, and the extra pin on the Sonoff header is pin 14.
+ Button:
+  * Press less than a sec, toggle relay and publish update to topic.
+  * Over 5 sec, turns off relay and resets the ESP.
+  * Over 10 sec, turns off relay and resets WiFi settings then reboots.  
+
+
+Pin 12 on the ESP8266 controls the relay. Pin 0 is the button, 13 is the status LED, and the extra pin on the Sonoff header is pin 14.
 
 
 Also extra thanks to GIThub user tzapu for SonoffBoilerplate, and the WiFi lib. 
