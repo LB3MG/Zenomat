@@ -1,4 +1,10 @@
-#include <ESP8266WiFi.h>
+/*  Zenomat FW for Sonoff WiFi Switch
+ *  ToDo: Auth for MQTT
+ *  
+ *  lb3mg@radiokameratene.no
+ */
+
+#include <ESP8266WiFi.h> //ESP communitys from Boards man.
 #include <PubSubClient.h> //Nick O'Learys from Lib manager
 #include <WiFiManager.h>  //tzapus from Lib manager
 #include <EEPROM.h>
@@ -33,31 +39,43 @@ int buttonState = HIGH;
 
 static long startPress = 0;
 
+long lastMsg = 0;
+char msg[50];
+int value = 0;
+
 typedef struct {
-  char  bootState[3]      = "on";
+  char  bootState[6]      = "off";
   char  mqttHostname[32]  = "test.mosquitto.org";
   char  mqttPort[6]       = "1883";
+  char  mqttUsername[16]    = "";
+  char  mqttPassword[16]    = "";
   char  mqttClientID[24]  = "zenomatID";
-  char  mqttTopic[32]     = "relay";
+  char  mqttTopic[32]     = "zenomat/relay";
   int   salt              = EEPROM_SALT;
 } ZenomatSettings;
 
 ZenomatSettings settings;
 
-//http://stackoverflow.com/questions/9072320/split-string-into-string-array
-String getValue(String data, char separator, int index){
-  int found = 0;
-  int strIndex[] = {0, -1};
-  int maxIndex = data.length()-1;
-
-  for(int i=0; i<=maxIndex && found<=index; i++){
-    if(data.charAt(i)==separator || i==maxIndex){
-        found++;
-        strIndex[0] = strIndex[1]+1;
-        strIndex[1] = (i == maxIndex) ? i+1 : i;
+void reconnect() {
+  // Loop until we're reconnected
+  while (!mqtt.connected()) {
+    Serial.println("Attempting MQTT connection...");
+    // Attempt to connect
+    if (mqtt.connect("ESP8266Client")) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+      mqtt.publish("zenomat/chatter", "Zenomat online");
+      // ... and resubscribe
+      mqtt.subscribe(settings.mqttTopic);
+      Serial.println(settings.mqttTopic);
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(mqtt.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
     }
   }
-  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
 void tick(){
@@ -76,15 +94,16 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   ticker.attach(0.2, tick);
 }
 
-void updateMQTT() {
+void updateMQTT(){
   int state = digitalRead(SONOFF_RELAY_PIN);
-  String stateString;
+  String stateString; //Treated myself to a string object. Could be optimized away
   if (state == 1){
     stateString = "On";
     } else {
     stateString = "Off";
   }
   int len=stateString.length();
+  len+=1;//off by one bugfix
   char stateChar[len];
   stateString.toCharArray(stateChar,len);
   
@@ -98,23 +117,21 @@ void setState(int state) {
   digitalWrite(SONOFF_RELAY_PIN, state);
 
   //led
-  if (SONOFF_LED_RELAY_STATE) {
-    digitalWrite(SONOFF_LED, (state + 1) % 2); // led is active low
+  if (SONOFF_RELAY_PIN) {
+    digitalWrite(SONOFF_LED, 0); // led is active low
+  }else{
+    digitalWrite(SONOFF_LED, 1);
   }
-
   //MQTT
   updateMQTT();
-
 }
 
-void turnOn(int channel = 0) {
-  int relayState = HIGH;
-  setState(relayState);
+void turnOn() {
+  setState(1);
 }
 
-void turnOff(int channel = 0) {
-  int relayState = LOW;
-  setState(relayState);
+void turnOff() {
+  setState(0);
 }
 
 void toggleState() {
@@ -131,7 +148,7 @@ void saveConfigCallback () {
 }
 
 
-void toggle(int channel = 0) {
+void toggle() {
   Serial.println("toggle state");
   Serial.println(digitalRead(SONOFF_RELAY_PIN));
   int relayState = digitalRead(SONOFF_RELAY_PIN) == HIGH ? LOW : HIGH;
@@ -139,26 +156,27 @@ void toggle(int channel = 0) {
 }
 
 void restart() {
-  //TODO turn off relays before restarting
+  turnOff();
   ESP.reset();
   delay(1000);
 }
 
 void reset() {
-  //reset settings to defaults
-  //TODO turn off relays before restarting
-  /*
-    WMSettings defaults;
-    settings = defaults;
-    EEPROM.begin(512);
-    EEPROM.put(0, settings);
-    EEPROM.end();
-  */
+  turnOff(); //Turn off relay
+  //resetEEpromSettings()
   //reset wifi credentials
   WiFi.disconnect();
   delay(1000);
   ESP.reset();
   delay(1000);
+}
+
+void resetEEpromSettings(){
+  ZenomatSettings defaults;
+  settings = defaults;
+  EEPROM.begin(512);
+  EEPROM.put(0, settings);
+  EEPROM.end();
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -172,62 +190,17 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   // Switch on the LED if an 1 was received as first character
   if ((char)payload[0] == '1') {
-    digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
+    digitalWrite(SONOFF_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
     // but actually the LED is on; this is because
     // it is acive low on the ESP-01)
+    turnOn();
   } else {
-    digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
+    digitalWrite(SONOFF_LED, HIGH);  // Turn the LED off by making the voltage HIGH
+    turnOff();
   }
-/*
-  Serial.print(pub.topic());
-  Serial.print(" => ");
-  if (pub.has_stream()) {
-    int BUFFER_SIZE = 100;
-    uint8_t buf[BUFFER_SIZE];
-    int read;
-    while (read = pub.payload_stream()->read(buf, BUFFER_SIZE)) {
-      Serial.write(buf, read);
-    }
-    pub.payload_stream()->stop();
-    Serial.println("had buffer");
-  } else {
-    Serial.println(pub.payload_string());
-    String topic = pub.topic();
-    String payload = pub.payload_string();
-    
-    if (topic == settings.mqttTopic) {
-      Serial.println("exact match");
-      return;
-    }
-    
-    if (topic.startsWith(settings.mqttTopic)) {
-      Serial.println("for this device");
-      topic = topic.substring(strlen(settings.mqttTopic) + 1);
-      String channelString = getValue(topic, '/', 0);
-      if(!channelString.startsWith("channel-")) {
-        Serial.println("no channel");
-        return;
-      }
-      channelString.replace("channel-", "");
-      int channel = channelString.toInt();
-      Serial.println(channel);
-      if (payload == "on") {
-        turnOn(channel);
-      }
-      if (payload == "off") {
-        turnOff(channel);
-      }
-      if (payload == "toggle") {
-        toggle(channel);
-      }
-      if(payload == "") {
-        updateMQTT(channel);
-      }
-      
-    }
-  }
-  */
+
 }
+
 void setup() {
   Serial.begin(115200);
 
@@ -267,12 +240,21 @@ void setup() {
   Serial.println(settings.mqttClientID);
   Serial.println(settings.mqttTopic);
   
-  WiFiManagerParameter custom_mqtt_text("<br/>MQTT config. <br/> No url to disable.<br/>");
-  wifiManager.addParameter(&custom_mqtt_text);
+  WiFiManagerParameter custom_mqtt_config_text("<p/><b>MQTT config</b> <br/>No url to disable.<br/>");
+  wifiManager.addParameter(&custom_mqtt_config_text);
 
   WiFiManagerParameter custom_mqtt_hostname("mqtt-hostname", "Hostname", settings.mqttHostname, 33, "<br/>MQTT broker<br/>");
   wifiManager.addParameter(&custom_mqtt_hostname);
+/*  
+  WiFiManagerParameter custom_mqtt_login_text("<p/>Leave blank if no login<br/>");
+  wifiManager.addParameter(&custom_mqtt_login_text);
+  
+  WiFiManagerParameter custom_mqtt_username("mqtt-user", "Username", settings.mqttUsername, 16, "<br/>Username<br/>");
+  wifiManager.addParameter(&custom_mqtt_username);
 
+  WiFiManagerParameter custom_mqtt_topic("mqtt-pass", "Password", settings.mqttPassword, 16, "<br/>Password<br/>");
+  wifiManager.addParameter(&custom_mqtt_password);
+*/  
   WiFiManagerParameter custom_mqtt_port("mqtt-port", "port", settings.mqttPort, 6, "<br/>Port<br/>");
   wifiManager.addParameter(&custom_mqtt_port);
 
@@ -313,7 +295,8 @@ void setup() {
       MQTT_ENABLED = false;
     }
     if (MQTT_ENABLED) {
-    // mqtt.set_server(settings.mqttHostname, atoi(settings.mqttPort));
+     mqtt.setServer(settings.mqttHostname, atoi(settings.mqttPort));
+     mqtt.setCallback(mqttCallback);
     }
 
     //OTA
@@ -338,7 +321,7 @@ void setup() {
     ArduinoOTA.begin();
   
     //if you get here you have connected to the WiFi
-    Serial.println("connected...yeey :)");
+    Serial.println("connected!");
     ticker.detach();
   
     //setup button
@@ -368,30 +351,21 @@ void loop() {
   ArduinoOTA.handle();
 
 //mqtt loop
-if (MQTT_ENABLED) {
-  if (!mqtt.connected()) {
-    if(lastMQTTConnectionAttempt == 0 || millis() > lastMQTTConnectionAttempt + 3 * 60 * 1000) {
-      lastMQTTConnectionAttempt = millis();
-      Serial.println(millis());
-      Serial.println("Trying to connect to mqtt");
-      if (mqtt.connect(settings.mqttClientID)) {
-        mqtt.setCallback(mqttCallback);
-        char topic[50];
-        sprintf(topic, "%s/+", settings.mqttTopic);
-        mqtt.subscribe(topic);
-
-        //TODO multiple relays
-        updateMQTT();
-      } else {
-        Serial.println("failed");
-      }
-    }
-    
-  } else {
-    mqtt.loop();
+if (!mqtt.connected()) {
+    reconnect();
   }
-}
+  mqtt.loop();
 
+  long now = millis();
+  if (now - lastMsg > 120000) {
+    lastMsg = now;
+    ++value;
+    snprintf (msg, 75, "Ping #%ld", value);
+    Serial.print("Publish message: ");
+    Serial.println(msg);
+    mqtt.publish("zenomat/chatter", msg);
+  }
+  
   //delay(200);
   //Serial.println(digitalRead(SONOFF_BUTTON));
   switch (cmd) {
@@ -402,13 +376,13 @@ if (MQTT_ENABLED) {
       if (currentState != buttonState) {
         if (buttonState == LOW && currentState == HIGH) {
           long duration = millis() - startPress;
-          if (duration < 1000) {
+          if (duration < 1000) { //less than a sec for toggle relay
             Serial.println("short press - toggle relay");
             toggle();
-          } else if (duration < 5000) {
+          } else if (duration < 5000) { //5 sec for reset
             Serial.println("medium press - reset");
             restart();
-          } else if (duration < 60000) {
+          } else if (duration < 10000) { //10sec for flush settings
             Serial.println("long press - reset settings");
             reset();
           }
