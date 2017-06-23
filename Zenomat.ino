@@ -15,7 +15,7 @@ PubSubClient mqtt(wclient);
 
 //for LED status
 #include <Ticker.h>
-Ticker ticker;
+Ticker periodic;
 
 #define   SONOFF_BUTTON             0
 #define   SONOFF_INPUT              14
@@ -23,10 +23,7 @@ Ticker ticker;
 #define   SONOFF_RELAY_PIN          12
 
 #define EEPROM_SALT 14579
-#define SONOFF_LED_RELAY_STATE false
 #define HOSTNAME "Zenomat"
-static bool MQTT_ENABLED = true;
-int lastMQTTConnectionAttempt = 0;
 
 const int CMD_WAIT = 0;
 const int CMD_BUTTON_CHANGE = 1;
@@ -61,7 +58,7 @@ void reconnect() {
   while (!mqtt.connected()) {
     Serial.println("Attempting MQTT connection...");
     // Attempt to connect
-    if (mqtt.connect("ESP8266Client")) {
+    if (mqtt.connect(settings.mqttClientID)) {
       Serial.println("connected");
       // Once connected, publish an announcement...
       mqtt.publish("zenomat/chatter", "Zenomat online");
@@ -72,16 +69,15 @@ void reconnect() {
       Serial.print("failed, rc=");
       Serial.print(mqtt.state());
       Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
+      delay(5000); // Wait 5 seconds before retrying
     }
   }
 }
 
 void tick(){
-  //toggle state
-  int state = digitalRead(SONOFF_LED);  // get the current state of GPIO1 pin
-  digitalWrite(SONOFF_LED, !state);     // set pin to the opposite state
+  //toggle LED state
+  int state = digitalRead(SONOFF_LED);
+  digitalWrite(SONOFF_LED, !state);
 }
 
 //gets called when WiFiManager enters configuration mode
@@ -91,7 +87,7 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   //if you used auto generated SSID, print it
   Serial.println(myWiFiManager->getConfigPortalSSID());
   //entered config mode, make led toggle faster
-  ticker.attach(0.2, tick);
+  periodic.attach(0.2, tick);
 }
 
 void updateMQTT(){
@@ -112,26 +108,18 @@ void updateMQTT(){
   mqtt.publish(topic, stateChar);
 }
 
-void setState(int state) {
-  //relay
+void setRelayState(int state) {
   digitalWrite(SONOFF_RELAY_PIN, state);
-
-  //led
-  if (SONOFF_RELAY_PIN) {
-    digitalWrite(SONOFF_LED, 0); // led is active low
-  }else{
-    digitalWrite(SONOFF_LED, 1);
-  }
-  //MQTT
+  digitalWrite(SONOFF_LED, !state); //LED active low, opposit of relay.
   updateMQTT();
 }
 
 void turnOn() {
-  setState(1);
+  setRelayState(1);
 }
 
 void turnOff() {
-  setState(0);
+  setRelayState(0);
 }
 
 void toggleState() {
@@ -151,8 +139,8 @@ void saveConfigCallback () {
 void toggle() {
   Serial.println("toggle state");
   Serial.println(digitalRead(SONOFF_RELAY_PIN));
-  int relayState = digitalRead(SONOFF_RELAY_PIN) == HIGH ? LOW : HIGH;
-  setState(relayState);
+  bool relayState = (digitalRead(SONOFF_RELAY_PIN)==HIGH);
+  setRelayState(!relayState);
 }
 
 void restart() {
@@ -206,8 +194,8 @@ void setup() {
 
   //set led pin as output
   pinMode(SONOFF_LED, OUTPUT);
-  // start ticker with 0.5 because we start in AP mode and try to connect
-  ticker.attach(0.6, tick);
+  // blink 1 sec intervall in AP mode, try to connect
+  periodic.attach(0.6, tick);
 
 
   const char *hostname = HOSTNAME;
@@ -288,16 +276,11 @@ void setup() {
     EEPROM.begin(512);
     EEPROM.put(0, settings);
     EEPROM.end();
-    }
+  }
     
     //config mqtt
-    if (strlen(settings.mqttHostname) == 0) {
-      MQTT_ENABLED = false;
-    }
-    if (MQTT_ENABLED) {
-     mqtt.setServer(settings.mqttHostname, atoi(settings.mqttPort));
-     mqtt.setCallback(mqttCallback);
-    }
+    mqtt.setServer(settings.mqttHostname, atoi(settings.mqttPort));
+    mqtt.setCallback(mqttCallback);
 
     //OTA
     ArduinoOTA.onStart([]() {
@@ -322,7 +305,7 @@ void setup() {
   
     //if you get here you have connected to the WiFi
     Serial.println("connected!");
-    ticker.detach();
+    periodic.detach();
   
     //setup button
     pinMode(SONOFF_BUTTON, INPUT);
@@ -336,11 +319,6 @@ void setup() {
     turnOn();
   } else {
     turnOff();
-  }
-
-  //setup led
-  if (!SONOFF_LED_RELAY_STATE) {
-    digitalWrite(SONOFF_LED, LOW);
   }
 
   Serial.println("done setup");
@@ -365,9 +343,7 @@ if (!mqtt.connected()) {
     Serial.println(msg);
     mqtt.publish("zenomat/chatter", msg);
   }
-  
-  //delay(200);
-  //Serial.println(digitalRead(SONOFF_BUTTON));
+
   switch (cmd) {
     case CMD_WAIT:
       break;
