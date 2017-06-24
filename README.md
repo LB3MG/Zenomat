@@ -35,7 +35,7 @@ You can set:
  * Unique ID.
  * MQTT topic.
  
- ##Button:
+ ## Button:
   * Press less than a sec, toggle relay and publish update to topic.
   * Between 1 and 6 sec, turns off relay and resets the ESP.
   * Between 6 and 30 sec, turns off relay and resets WiFi settings then starts the captive portal.  
