@@ -37,12 +37,12 @@ You can set:
  
  Button:
   * Press less than a sec, toggle relay and publish update to topic.
-  * Over 5 sec, turns off relay and resets the ESP.
-  * Over 10 sec, turns off relay and resets WiFi settings then starts the captive portal.  
+  * Between 1 and 6 sec, turns off relay and resets the ESP.
+  * Between 6 and 30 sec, turns off relay and resets WiFi settings then starts the captive portal.  
 
 
 Pin 12 on the ESP8266 controls the relay. Pin 0 is the button, 13 is the status LED, and the extra pin on the Sonoff header is pin 14.
 
 Good luck with your project!
 73 de LB3MG
-Bernt-Egilk
+Bernt-Egil
