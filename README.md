@@ -45,6 +45,6 @@ You can set:
 
 
 
-*Good luck with your project!
-73 de LB3MG
+*Good luck with your project!  
+73 de LB3MG  
 Bernt-Egil*
