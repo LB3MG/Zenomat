@@ -13,7 +13,7 @@
 WiFiClient wclient;
 PubSubClient mqtt(wclient);
 
-//for LED status
+//periodic.attach(interval, functionToCall)
 #include <Ticker.h>
 Ticker periodic;
 
@@ -34,7 +34,7 @@ int cmd = CMD_WAIT;
 //inverted button state
 int buttonState = HIGH;
 
-static long startPress = 0;
+volatile unsigned long startPress = 0;
 
 long lastMsg = 0;
 char msg[50];
@@ -74,25 +74,24 @@ void reconnect() {
   }
 }
 
-void tick(){
-  //toggle LED state
+void toggleLED(){
   int state = digitalRead(SONOFF_LED);
   digitalWrite(SONOFF_LED, !state);
 }
 
 //gets called when WiFiManager enters configuration mode
 void configModeCallback (WiFiManager *myWiFiManager) {
-  Serial.println("Entered config mode");
+  Serial.println("WiFi config mode");
   Serial.println(WiFi.softAPIP());
   //if you used auto generated SSID, print it
   Serial.println(myWiFiManager->getConfigPortalSSID());
   //entered config mode, make led toggle faster
-  periodic.attach(0.2, tick);
+  periodic.attach(0.2, toggleLED);
 }
 
 void updateMQTT(){
   int state = digitalRead(SONOFF_RELAY_PIN);
-  String stateString; //Treated myself to a string object. Could be optimized away
+  String stateString; //Treated myself to a string object.
   if (state == 1){
     stateString = "On";
     } else {
@@ -195,7 +194,7 @@ void setup() {
   //set led pin as output
   pinMode(SONOFF_LED, OUTPUT);
   // blink 1 sec intervall in AP mode, try to connect
-  periodic.attach(0.6, tick);
+  periodic.attach(0.6, toggleLED);
 
 
   const char *hostname = HOSTNAME;
@@ -204,7 +203,8 @@ void setup() {
   //set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
   wifiManager.setAPCallback(configModeCallback);
 
-  //timeout - this will quit WiFiManager if it's not configured in 3 minutes, causing a restart
+  //timeout - this will quit WiFiManager
+  //if it's not configured in 3 minutes, causing a restart
   wifiManager.setConfigPortalTimeout(180);
 
   //custom params
@@ -218,8 +218,10 @@ void setup() {
     settings = defaults;
   }
 
-
-  WiFiManagerParameter custom_boot_state("boot-state", "on/off on boot", settings.bootState, 33, "<br/>Boot state<br/>");
+// this does some gymnastics to work around what I guess is a bug in WiFimanager
+// To get valid HTML from WiFiManagerParameter, I need to format like this:
+// "><br/>Boot state. on/off<br/"
+  WiFiManagerParameter custom_boot_state("boot-state", "on/off on boot", settings.bootState, 33, "><br/>Boot state. on/off<br/");
   wifiManager.addParameter(&custom_boot_state);
 
   Serial.println(settings.bootState);
@@ -228,10 +230,13 @@ void setup() {
   Serial.println(settings.mqttClientID);
   Serial.println(settings.mqttTopic);
   
+  WiFiManagerParameter custom_mqtt_client_id("mqtt-client-id", "Client ID", settings.mqttClientID, 24, "><br/>Unique ID<br/");
+  wifiManager.addParameter(&custom_mqtt_client_id);
+  
   WiFiManagerParameter custom_mqtt_config_text("<p/><b>MQTT config</b> <br/>No url to disable.<br/>");
   wifiManager.addParameter(&custom_mqtt_config_text);
 
-  WiFiManagerParameter custom_mqtt_hostname("mqtt-hostname", "Hostname", settings.mqttHostname, 33, "<br/>MQTT broker<br/>");
+  WiFiManagerParameter custom_mqtt_hostname("mqtt-hostname", "Hostname", settings.mqttHostname, 33, "><br/>MQTT broker<br/");
   wifiManager.addParameter(&custom_mqtt_hostname);
 /*  
   WiFiManagerParameter custom_mqtt_login_text("<p/>Leave blank if no login<br/>");
@@ -243,13 +248,10 @@ void setup() {
   WiFiManagerParameter custom_mqtt_topic("mqtt-pass", "Password", settings.mqttPassword, 16, "<br/>Password<br/>");
   wifiManager.addParameter(&custom_mqtt_password);
 */  
-  WiFiManagerParameter custom_mqtt_port("mqtt-port", "port", settings.mqttPort, 6, "<br/>Port<br/>");
+  WiFiManagerParameter custom_mqtt_port("mqtt-port", "port", settings.mqttPort, 6, "><br/>Port<br/");
   wifiManager.addParameter(&custom_mqtt_port);
 
-  WiFiManagerParameter custom_mqtt_client_id("mqtt-client-id", "Client ID", settings.mqttClientID, 24, "<br/>Unique ID<br/>");
-  wifiManager.addParameter(&custom_mqtt_client_id);
-
-  WiFiManagerParameter custom_mqtt_topic("mqtt-topic", "Topic", settings.mqttTopic, 33);
+  WiFiManagerParameter custom_mqtt_topic("mqtt-topic", "Topic", settings.mqttTopic, 33, "><br/>MQTT topic<br/");
   wifiManager.addParameter(&custom_mqtt_topic);
 
   //set config save notify callback
@@ -262,7 +264,7 @@ void setup() {
     delay(1000);
   }
   
-  //save the custom parameters to FS
+  //save the custom parameters to EEPROM
   if (shouldSaveConfig) {
     Serial.println("Saving config");
     strcpy(settings.bootState, custom_boot_state.getValue());
@@ -355,10 +357,10 @@ if (!mqtt.connected()) {
           if (duration < 1000) { //less than a sec for toggle relay
             Serial.println("short press - toggle relay");
             toggle();
-          } else if (duration < 5000) { //5 sec for reset
+          } else if (duration < 6000) { //5 sec for reset
             Serial.println("medium press - reset");
             restart();
-          } else if (duration < 10000) { //10sec for flush settings
+          } else if (duration < 30000) { //10sec for flush settings
             Serial.println("long press - reset settings");
             reset();
           }
