@@ -23,7 +23,7 @@ There are probably several different versions of the board, but is what I got of
 
 
 ## How it works
-Hold the button down while powering on to enter bootloader for flashing, or uploading through ArduinoIDE. When you power it up for the first time, it creates the "Zenomat" access point. Connect to it via WiFi, and a captive portal appears allowing you to configure the device.
+Hold the button down while powering on to enter bootloader for flashing, or uploading through ArduinoIDE. When you power it up for the first time, it creates the "Zenomat" access point. Connect to it via WiFi, and a captive portal appears allowing you to configure the device. After configuring WiFi and MQTT, the Zenomat will connect with the broker via WiFi on boot. Use the button to enter config mode again when needed.
 
 You can set:
  * WiFi Network. SSID and password.
@@ -35,7 +35,7 @@ You can set:
  * Unique ID.
  * MQTT topic.
  
- Button:
+ ##Button:
   * Press less than a sec, toggle relay and publish update to topic.
   * Between 1 and 6 sec, turns off relay and resets the ESP.
   * Between 6 and 30 sec, turns off relay and resets WiFi settings then starts the captive portal.  
