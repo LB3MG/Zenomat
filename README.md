@@ -3,7 +3,7 @@ __MQTT__ on __Sonoff WiFi switch__, with __captive config portal__.
 Saves config to EEPROM. Manages modes through onboard button. No added sugar.  
 
 Version compatibility problems between different existing components forced me to commit Zenomat.  
-I took [tzapus code](https://github.com/tzapu, tzapus code) and ran with it. Wifimanager and Sonoffboilerplate. 
+I took [tzapus code]:https://github.com/tzapu and ran with it. Wifimanager and Sonoffboilerplate. 
 
 
 __Zenomat__ relies on these components. Versions stated is what I used when writing and compiling the latest zenomat.ino, so that should work for you too. Other versions might also work fresh out of box, or with minor tweaking.
