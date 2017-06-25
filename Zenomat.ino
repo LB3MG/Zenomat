@@ -1,5 +1,6 @@
 /*  Zenomat FW for Sonoff WiFi Switch
  *  ToDo: Auth for MQTT
+ *        Auth for ota
  *  
  *  lb3mg@radiokameratene.no
  */
@@ -13,7 +14,6 @@
 WiFiClient wclient;
 PubSubClient mqtt(wclient);
 
-//periodic.attach(interval, functionToCall)
 #include <Ticker.h>
 Ticker periodic;
 
@@ -48,6 +48,7 @@ typedef struct {
   char  mqttPassword[16]    = "";
   char  mqttClientID[24]  = "zenomatID";
   char  mqttTopic[32]     = "zenomat/relay";
+  char  otaPassword[16]    = "";
   int   salt              = EEPROM_SALT;
 } ZenomatSettings;
 
@@ -129,7 +130,7 @@ void toggleState() {
 bool shouldSaveConfig = false;
 
 //callback notifying us of the need to save config
-void saveConfigCallback () {
+void saveConfigCallback() {
   Serial.println("Should save config");
   shouldSaveConfig = true;
 }
@@ -238,18 +239,25 @@ void setup() {
 
   WiFiManagerParameter custom_mqtt_hostname("mqtt-hostname", "Hostname", settings.mqttHostname, 33, "><br/>MQTT broker<br/");
   wifiManager.addParameter(&custom_mqtt_hostname);
-/*  
-  WiFiManagerParameter custom_mqtt_login_text("<p/>Leave blank if no login<br/>");
-  wifiManager.addParameter(&custom_mqtt_login_text);
-  
-  WiFiManagerParameter custom_mqtt_username("mqtt-user", "Username", settings.mqttUsername, 16, "<br/>Username<br/>");
-  wifiManager.addParameter(&custom_mqtt_username);
 
-  WiFiManagerParameter custom_mqtt_topic("mqtt-pass", "Password", settings.mqttPassword, 16, "<br/>Password<br/>");
-  wifiManager.addParameter(&custom_mqtt_password);
-*/  
   WiFiManagerParameter custom_mqtt_port("mqtt-port", "port", settings.mqttPort, 6, "><br/>Port<br/");
   wifiManager.addParameter(&custom_mqtt_port);
+/*  
+  WiFiManagerParameter custom_mqtt_login_text("<p/>Leave blank if no MQTT login<br/>");
+  wifiManager.addParameter(&custom_mqtt_login_text);
+  
+  WiFiManagerParameter custom_mqtt_username("mqtt-user", "MQTT username", settings.mqttUsername, 16, "><br/>Username<br/");
+  wifiManager.addParameter(&custom_mqtt_username);
+
+  WiFiManagerParameter custom_mqtt_password("mqtt-pass", "MQTT password", settings.mqttPassword, 16, "><br/>Password<br/");
+  wifiManager.addParameter(&custom_mqtt_password);
+
+  WiFiManagerParameter custom_ota_password_text("<p/>Leave blank if no OTA password<br/>");
+  wifiManager.addParameter(&custom_ota_password_text);
+  
+  WiFiManagerParameter custom_ota_password("ota-pass", "OTA password", settings.otaPassword, 16, "><br/>OTA Password<br/");
+  wifiManager.addParameter(&custom_ota_password);
+//*/
 
   WiFiManagerParameter custom_mqtt_topic("mqtt-topic", "Topic", settings.mqttTopic, 33, "><br/>MQTT topic<br/");
   wifiManager.addParameter(&custom_mqtt_topic);
@@ -267,13 +275,18 @@ void setup() {
   //save the custom parameters to EEPROM
   if (shouldSaveConfig) {
     Serial.println("Saving config");
+
     strcpy(settings.bootState, custom_boot_state.getValue());
-  
     strcpy(settings.mqttHostname, custom_mqtt_hostname.getValue());
     strcpy(settings.mqttPort, custom_mqtt_port.getValue());
     strcpy(settings.mqttClientID, custom_mqtt_client_id.getValue());
     strcpy(settings.mqttTopic, custom_mqtt_topic.getValue());
-  
+/*
+    strcpy(settings.mqttUsername, custom_mqtt_username.getValue());
+    strcpy(settings.mqttPassword, custom_mqtt_password.getValue());
+    strcpy(settings.otaPassword, custom_ota_password.getValue());
+//*/
+    
     Serial.println(settings.bootState);
     EEPROM.begin(512);
     EEPROM.put(0, settings);
@@ -302,7 +315,8 @@ void setup() {
       else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
     });
-    ArduinoOTA.setHostname(hostname);
+    ArduinoOTA.setHostname(settings.mqttClientID);
+    //ArduinoOTA.setPassword(settings.otaPassword);
     ArduinoOTA.begin();
   
     //if you get here you have connected to the WiFi
